@@ -37,14 +37,6 @@ public class Item {
 
     private String category;
 
-    private Double price;
-
-    private boolean isNegotiable;
-
-    @NotNull(message = "Trade option is required")
-    @Enumerated(EnumType.STRING)
-    private TradeOption tradeOption;
-
     @Column(name = "item_condition", nullable = false)
     @NotNull(message = "Condition is required")
     @Enumerated(EnumType.STRING)
@@ -55,7 +47,21 @@ public class Item {
     private String thumbnailUrl;
 
     @Enumerated(EnumType.STRING)
+    @Column(length = 20)
     private Status status = Status.AVAILABLE;
+
+    /** The user this item was traded with (set by the poster from a chat). */
+    @ManyToOne(fetch = FetchType.LAZY)
+    @JoinColumn(name = "traded_with_user_id")
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private User tradedWith;
+
+    private LocalDateTime tradedAt;
+
+    /** Exposes only the id of the trade partner in JSON responses. */
+    public Long getTradedWithUserId() {
+        return tradedWith != null ? tradedWith.getId() : null;
+    }
 
     @ManyToOne(fetch = FetchType.LAZY)
     @JoinColumn(name = "user_id")
@@ -69,7 +75,4 @@ public class Item {
 
     @UpdateTimestamp
     private LocalDateTime updatedAt;
-
-    public void setIsNegotiable(boolean negotiable) {
-    }
 }

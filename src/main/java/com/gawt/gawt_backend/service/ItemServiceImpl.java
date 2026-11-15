@@ -2,20 +2,31 @@ package com.gawt.gawt_backend.service;
 
 import com.cloudinary.Cloudinary;
 import com.cloudinary.utils.ObjectUtils;
+import com.gawt.gawt_backend.dto.ChatEvent;
 import com.gawt.gawt_backend.dto.ItemRequest;
+import com.gawt.gawt_backend.dto.ItemStatusEvent;
+import com.gawt.gawt_backend.dto.MyPostResponse;
+import com.gawt.gawt_backend.dto.UpdateItemRequest;
 import com.gawt.gawt_backend.model.*;
-import com.gawt.gawt_backend.repository.ItemImageRepository;
-import com.gawt.gawt_backend.repository.ItemRepository;
+import com.gawt.gawt_backend.repository.*;
 import jakarta.transaction.Transactional;
 import lombok.RequiredArgsConstructor;
 import lombok.extern.slf4j.Slf4j;
+import org.springframework.http.HttpStatus;
+import org.springframework.messaging.simp.SimpMessagingTemplate;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.support.TransactionSynchronization;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.web.multipart.MultipartFile;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.io.IOException;
+import java.time.LocalDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 
 @Service
 @RequiredArgsConstructor
@@ -28,15 +39,127 @@ public class ItemServiceImpl implements ItemService {
     private final ItemRepository itemRepository;
     private final ItemImageRepository itemImageRepository;
     private final Cloudinary cloudinary;
+    private final CommentRepository commentRepository;
+    private final LikeRepository likeRepository;
+    private final ConversationRepository conversationRepository;
+    private final MessageRepository messageRepository;
+    private final NotificationRepository notificationRepository;
+    private final SimpMessagingTemplate messagingTemplate;
+
+    // ------------------------------------------------------------ My Posts
+
+    @Override
+    public List<MyPostResponse> getMyPosts(User user) {
+        return itemRepository.findByUserIdOrderByCreatedAtDesc(user.getId())
+                .stream()
+                .map(this::toMyPost)
+                .toList();
+    }
+
+    @Override
+    public MyPostResponse updateItem(Long itemId, UpdateItemRequest request, User user) {
+        Item item = getOwnedItem(itemId, user, false);
+        item.setTitle(request.title().trim());
+        item.setDescription(blankToNull(request.description()));
+        item.setCategory(blankToNull(request.category()));
+        item.setCondition(request.condition());
+        item.setMeetupLocation(blankToNull(request.meetupLocation()));
+        return toMyPost(itemRepository.save(item));
+    }
+
+    @Override
+    public MyPostResponse updateStatus(Long itemId, Status status, User user) {
+        Item item = getOwnedItem(itemId, user, false);
+        if (item.getStatus() != status) {
+            item.setStatus(status);
+            if (status == Status.AVAILABLE) {
+                item.setTradedWith(null);
+                item.setTradedAt(null);
+            } else {
+                // Marked from My Posts (not from a chat): trade partner unknown.
+                item.setTradedAt(LocalDateTime.now());
+            }
+            itemRepository.save(item);
+            broadcastStatus(item);
+        }
+        return toMyPost(item);
+    }
+
+    @Override
+    public void deleteItem(Long itemId, User user) {
+        Item item = getOwnedItem(itemId, user, true);
+        // Remove everything that points at the item, children before parents.
+        notificationRepository.deleteByItemId(itemId);
+        messageRepository.deleteByItemId(itemId);
+        conversationRepository.deleteByItemId(itemId);
+        commentRepository.deleteRepliesByItemId(itemId);
+        commentRepository.deleteByItemId(itemId);
+        likeRepository.deleteByItemId(itemId);
+        itemRepository.delete(item); // item images are removed by cascade
+    }
+
+    private Item getOwnedItem(Long itemId, User user, boolean allowAdmin) {
+        Item item = itemRepository.findById(itemId)
+                .orElseThrow(() -> new ResponseStatusException(HttpStatus.NOT_FOUND, "Post not found"));
+        boolean isOwner = item.getUser() != null && item.getUser().getId().equals(user.getId());
+        boolean isAdmin = user.getAuthorities().stream().anyMatch(a -> "ROLE_ADMIN".equals(a.getAuthority()));
+        if (!isOwner && !(allowAdmin && isAdmin)) {
+            throw new ResponseStatusException(HttpStatus.FORBIDDEN, "You can only change your own posts");
+        }
+        return item;
+    }
+
+    /** Tell everyone chatting about this item that its status changed (keeps chats/marketplace live). */
+    private void broadcastStatus(Item item) {
+        ChatEvent event = ChatEvent.status(
+                new ItemStatusEvent(item.getId(), item.getStatus(), item.getTradedWithUserId()));
+        Set<String> usernames = new LinkedHashSet<>();
+        for (Conversation c : conversationRepository.findByItemId(item.getId())) {
+            usernames.add(c.getPoster().getUsername());
+            usernames.add(c.getTrader().getUsername());
+        }
+        Runnable send = () -> usernames.forEach(u -> messagingTemplate.convertAndSendToUser(u, "/queue/chat", event));
+        if (TransactionSynchronizationManager.isSynchronizationActive()) {
+            TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+                @Override
+                public void afterCommit() {
+                    send.run();
+                }
+            });
+        } else {
+            send.run();
+        }
+    }
+
+    private MyPostResponse toMyPost(Item item) {
+        User tradedWith = item.getTradedWith();
+        return new MyPostResponse(
+                item.getId(),
+                item.getTitle(),
+                item.getDescription(),
+                item.getCategory(),
+                item.getCondition(),
+                item.getMeetupLocation(),
+                item.getThumbnailUrl(),
+                item.getStatus(),
+                tradedWith != null ? tradedWith.getId() : null,
+                tradedWith != null ? tradedWith.getUsername() : null,
+                item.getTradedAt(),
+                item.getCreatedAt(),
+                commentRepository.countByItemId(item.getId()),
+                likeRepository.countByItemId(item.getId()),
+                conversationRepository.countByItemId(item.getId()));
+    }
+
+    private static String blankToNull(String s) {
+        return s == null || s.isBlank() ? null : s.trim();
+    }
 
     @Override
     public Item createItem(String title,
             MultipartFile thumbnail,
             String description,
             String category,
-            Double price,
-            boolean isNegotiable,
-            TradeOption tradeOption,
             Condition condition,
             String meetupLocation,
             MultipartFile[] additionalImages,
@@ -47,10 +170,8 @@ public class ItemServiceImpl implements ItemService {
             item.setTitle(title);
             item.setDescription(description);
             item.setCategory(category);
-            item.setPrice(price);
-            item.setIsNegotiable(isNegotiable);
-            item.setTradeOption(tradeOption);
             item.setCondition(condition);
+            item.setStatus(Status.AVAILABLE);
             item.setMeetupLocation(meetupLocation);
             item.setUser(user);
 
@@ -107,9 +228,6 @@ public class ItemServiceImpl implements ItemService {
         item.setTitle(request.title());
         item.setDescription(request.description());
         item.setCategory(request.category());
-        item.setPrice(request.price());
-        item.setIsNegotiable(request.isNegotiable());
-        item.setTradeOption(request.tradeOption());
         item.setCondition(request.condition());
         item.setMeetupLocation(request.meetupLocation());
         item.setThumbnailUrl(thumbnailUrl);

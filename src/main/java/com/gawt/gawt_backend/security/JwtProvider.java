@@ -9,6 +9,7 @@ import org.springframework.security.core.userdetails.UserDetails;
 import org.springframework.stereotype.Component;
 
 import javax.crypto.SecretKey;
+import java.nio.charset.StandardCharsets;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.Map;
@@ -16,14 +17,39 @@ import java.util.Map;
 @Component
 public class JwtProvider {
 
-    @Value("${jwt.secret:your-secret-key-make-it-longer-for-security-purposes-minimum-32-characters}")
-    private String jwtSecret;
+    /**
+     * Signing secret from application.properties (bezkoder.app.jwtSecret).
+     * The JWT_SECRET environment variable overrides it if set.
+     * There is deliberately NO built-in default: a default written in the code
+     * would let anyone who reads the code forge login tokens.
+     */
+    private final long jwtExpirationMs;
+    private final SecretKey signingKey;
 
-    @Value("${jwt.expiration:86400000}") // 24 hours in milliseconds
-    private long jwtExpirationMs;
+    /**
+     * Builds and validates the signing key once, at startup. A missing or too-short
+     * secret stops startup with a clear message instead of silently rejecting every
+     * login. Note: Spring trims leading spaces after "=" in application.properties.
+     */
+    public JwtProvider(
+            @Value("${JWT_SECRET:${bezkoder.app.jwtSecret:}}") String jwtSecret,
+            @Value("${bezkoder.app.jwtExpirationMs:86400000}") long jwtExpirationMs) {
+        this.jwtExpirationMs = jwtExpirationMs;
+        if (jwtSecret == null || jwtSecret.isBlank()) {
+            throw new IllegalStateException(
+                    "JWT secret is missing. Set bezkoder.app.jwtSecret in application.properties "
+                            + "or the JWT_SECRET environment variable.");
+        }
+        byte[] bytes = jwtSecret.getBytes(StandardCharsets.UTF_8);
+        if (bytes.length < 32) {
+            throw new IllegalStateException(
+                    "JWT secret is too short (" + bytes.length + " bytes). HS256 needs at least 32 bytes.");
+        }
+        signingKey = Keys.hmacShaKeyFor(bytes);
+    }
 
     private SecretKey getSigningKey() {
-        return Keys.hmacShaKeyFor(jwtSecret.getBytes());
+        return signingKey;
     }
 
     public String generateToken(UserDetails userDetails) {

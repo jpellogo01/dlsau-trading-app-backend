@@ -1,9 +1,11 @@
 package com.gawt.gawt_backend.controller;
 
 import com.gawt.gawt_backend.dto.ItemRequest;
+import com.gawt.gawt_backend.dto.MyPostResponse;
+import com.gawt.gawt_backend.dto.UpdateItemRequest;
+import com.gawt.gawt_backend.dto.UpdateItemStatusRequest;
 import com.gawt.gawt_backend.model.Condition;
 import com.gawt.gawt_backend.model.Item;
-import com.gawt.gawt_backend.model.TradeOption;
 import com.gawt.gawt_backend.model.User;
 import com.gawt.gawt_backend.service.ItemService;
 import jakarta.validation.Valid;
@@ -29,15 +31,12 @@ public class ItemController {
             @RequestParam String title,
             @RequestParam(required = false) String description,
             @RequestParam(required = false) String category,
-            @RequestParam(required = false) Double price,
-            @RequestParam(defaultValue = "false") boolean isNegotiable,
-            @RequestParam TradeOption tradeOption,
             @RequestParam Condition condition,
             @RequestParam(required = false) String meetupLocation,
             @RequestPart(required = false) MultipartFile thumbnail,
             @RequestPart(required = false) MultipartFile[] additionalImages) {
         Item savedItem = itemService.createItem(
-                title, thumbnail, description, category, price, isNegotiable, tradeOption, condition, meetupLocation,
+                title, thumbnail, description, category, condition, meetupLocation,
                 additionalImages, user);
         return ResponseEntity.ok(savedItem);
     }
@@ -46,5 +45,34 @@ public class ItemController {
     public ResponseEntity<List<Item>> getAllItems() {
         List<Item> items = itemService.getAllItems();
         return ResponseEntity.ok(items);
+    }
+
+    // ------------------------------------------------------------ My Posts (owner only)
+
+    @GetMapping("/items/mine")
+    public ResponseEntity<List<MyPostResponse>> getMyPosts(@AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.getMyPosts(user));
+    }
+
+    @PutMapping("/items/{itemId}")
+    public ResponseEntity<MyPostResponse> updateItem(
+            @PathVariable Long itemId,
+            @Valid @RequestBody UpdateItemRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.updateItem(itemId, request, user));
+    }
+
+    @PatchMapping("/items/{itemId}/status")
+    public ResponseEntity<MyPostResponse> updateStatus(
+            @PathVariable Long itemId,
+            @Valid @RequestBody UpdateItemStatusRequest request,
+            @AuthenticationPrincipal User user) {
+        return ResponseEntity.ok(itemService.updateStatus(itemId, request.status(), user));
+    }
+
+    @DeleteMapping("/items/{itemId}")
+    public ResponseEntity<Void> deleteItem(@PathVariable Long itemId, @AuthenticationPrincipal User user) {
+        itemService.deleteItem(itemId, user);
+        return ResponseEntity.noContent().build();
     }
 }

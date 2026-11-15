@@ -48,6 +48,11 @@ public class SecurityConfig {
                 .sessionManagement(session -> session.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
                 .authorizeHttpRequests(auth -> auth
                         .requestMatchers("/api/auth/**").permitAll()
+                        // WebSocket handshake; STOMP CONNECT is authenticated by WebSocketAuthInterceptor
+                        .requestMatchers("/ws/**").permitAll()
+                        // Let Spring's error page through, so a server error shows its real
+                        // status/message (e.g. 500) instead of being masked as 403 Forbidden.
+                        .requestMatchers("/error").permitAll()
                         .requestMatchers(HttpMethod.OPTIONS, "/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/v1/items").permitAll()
                         .requestMatchers("/api/v1/items/**").hasAnyRole("USER", "ADMIN")

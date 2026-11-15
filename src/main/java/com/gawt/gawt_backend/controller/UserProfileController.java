@@ -32,14 +32,17 @@ public class UserProfileController {
             User user = userService.findByUsername(username)
                     .orElseThrow(() -> new RuntimeException("User not found"));
 
-            if (updateProfileRequest.getFirstName() != null) {
-                user.setFirstName(updateProfileRequest.getFirstName());
+            String firstName = clean(updateProfileRequest.getFirstName(), "First name");
+            String lastName = clean(updateProfileRequest.getLastName(), "Last name");
+            String program = clean(updateProfileRequest.getProgram(), "Program");
+            if (firstName != null) {
+                user.setFirstName(firstName);
             }
-            if (updateProfileRequest.getLastName() != null) {
-                user.setLastName(updateProfileRequest.getLastName());
+            if (lastName != null) {
+                user.setLastName(lastName);
             }
-            if (updateProfileRequest.getProgram() != null) {
-                user.setProgram(updateProfileRequest.getProgram());
+            if (program != null) {
+                user.setProgram(program);
             }
 
             user = userService.saveUser(user);
@@ -59,6 +62,18 @@ public class UserProfileController {
             return ResponseEntity.status(HttpStatus.BAD_REQUEST)
                     .body(new AuthController.ErrorResponse(e.getMessage()));
         }
+    }
+
+    /** Trims a field; null means "leave unchanged". Rejects values that are too long. */
+    private static String clean(String value, String label) {
+        if (value == null) {
+            return null;
+        }
+        String trimmed = value.trim();
+        if (trimmed.length() > 60) {
+            throw new RuntimeException(label + " must be 60 characters or fewer");
+        }
+        return trimmed;
     }
 
     @GetMapping("/profile")

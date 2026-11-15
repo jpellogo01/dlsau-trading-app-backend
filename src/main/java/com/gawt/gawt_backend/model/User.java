@@ -1,6 +1,7 @@
 package com.gawt.gawt_backend.model;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import jakarta.persistence.*;
 import lombok.AllArgsConstructor;
 import lombok.Builder;
@@ -22,6 +23,10 @@ import com.gawt.gawt_backend.model.Item;
 @Builder
 @Entity
 @Table(name = "users")
+// Never expose credentials, OTPs or Spring Security internals when a User is serialized (e.g. Item.user).
+@JsonIgnoreProperties(value = { "authorities", "accountNonExpired", "accountNonLocked",
+        "credentialsNonExpired", "enabled", "otpCode", "otpExpiryTime", "password",
+        "hibernateLazyInitializer", "handler" }, ignoreUnknown = true)
 public class User implements UserDetails {
 
     @Id
@@ -32,6 +37,7 @@ public class User implements UserDetails {
     private String username;
 
     @Column(nullable = false)
+    @JsonIgnore
     private String password;
 
     @Column(nullable = false, unique = true)
@@ -57,9 +63,11 @@ public class User implements UserDetails {
     private Boolean enabled;
 
     @Column(name = "otp_code")
+    @JsonIgnore
     private String otpCode;
 
     @Column(name = "otp_expiry_time")
+    @JsonIgnore
     private Long otpExpiryTime;
 
     @Column(nullable = false)
@@ -72,6 +80,7 @@ public class User implements UserDetails {
     }
 
     @Override
+    @JsonIgnore
     public String getPassword() {
         return password;
     }
