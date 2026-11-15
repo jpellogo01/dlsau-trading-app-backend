@@ -1,0 +1,10 @@
+# Copy this file to application-local.properties (same folder) and fill in
+# your own values for local development. That copy is git-ignored.
+
+spring.datasource.password=your-local-mysql-password
+# At least 32 characters, e.g. from: openssl rand -base64 48
+bezkoder.app.jwtSecret=change-me-to-a-long-random-string-at-least-32-chars
+cloudinary.cloud-name=your-cloud-name
+cloudinary.api-key=your-api-key
+cloudinary.api-secret=your-api-secret
+# brevo.api-key is read from the BREVO_API_KEY environment variable

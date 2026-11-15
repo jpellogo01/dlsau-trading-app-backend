@@ -18,6 +18,10 @@ public class BrevoEmailService {
     @Value("${brevo.api-key}")
     private String apiKey;
 
+    /** Sender address; must be verified in Brevo (BREVO_SENDER_EMAIL in production). */
+    @Value("${brevo.sender-email}")
+    private String senderEmail;
+
     public void sendOtpEmail(String toEmail, String firstName, String otp, long expiryMinutes) {
         try {
             URL url = new URL(BREVO_API_URL);
@@ -38,8 +42,8 @@ public class BrevoEmailService {
 
             // Use ObjectMapper or proper JSON escaping
             String jsonPayload = String.format(
-                    "{\"sender\":{\"name\":\"GAWT App\",\"email\":\"no-reply@dlsauwebtube.com\"},\"to\":[{\"email\":\"%s\"}],\"subject\":\"%s\",\"htmlContent\":\"%s\"}",
-                    toEmail, subject, escapeJson(htmlContent)
+                    "{\"sender\":{\"name\":\"GAWT App\",\"email\":\"%s\"},\"to\":[{\"email\":\"%s\"}],\"subject\":\"%s\",\"htmlContent\":\"%s\"}",
+                    escapeJson(senderEmail), toEmail, subject, escapeJson(htmlContent)
             );
 
             try (OutputStream os = conn.getOutputStream()) {

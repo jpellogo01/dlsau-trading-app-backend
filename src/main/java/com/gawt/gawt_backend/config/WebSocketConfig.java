@@ -2,6 +2,7 @@ package com.gawt.gawt_backend.config;
 
 import com.gawt.gawt_backend.security.WebSocketAuthInterceptor;
 import lombok.RequiredArgsConstructor;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.messaging.simp.config.ChannelRegistration;
 import org.springframework.messaging.simp.config.MessageBrokerRegistry;
@@ -16,10 +17,15 @@ public class WebSocketConfig implements WebSocketMessageBrokerConfigurer {
 
     private final WebSocketAuthInterceptor webSocketAuthInterceptor;
 
+    /** Same allowed origins as REST (app.cors.allowed-origins / APP_CORS_ORIGINS). */
+    @Value("${app.cors.allowed-origins}")
+    private String allowedOrigins;
+
     @Override
     public void registerStompEndpoints(StompEndpointRegistry registry) {
-        // Frontend connects to ws://<host>:8081/ws
-        registry.addEndpoint("/ws").setAllowedOriginPatterns("*");
+        // Frontend connects to ws(s)://<api-host>/ws
+        registry.addEndpoint("/ws")
+                .setAllowedOriginPatterns(CorsConfig.parseOrigins(allowedOrigins).toArray(String[]::new));
     }
 
     @Override
